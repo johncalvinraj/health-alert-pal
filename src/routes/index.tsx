@@ -2,6 +2,11 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { SiteHeader } from "@/components/SiteHeader";
 import { useEffect, useState } from "react";
 import { usePrescriptions, readLifestyle, alarmTime, type Lifestyle } from "@/lib/prescriptions";
+import { useT } from "@/lib/i18n";
+import { CalendarButton } from "@/components/CalendarButton";
+import { disconnect, isConnected, preloadGoogle } from "@/lib/google-calendar";
+import { autoSyncOn } from "@/lib/calendar-sync";
+import { setAutoCalendar } from "@/lib/prescriptions";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -16,59 +21,93 @@ export const Route = createFileRoute("/")({
 });
 
 function Home() {
-  const { items } = usePrescriptions();
+  const { t } = useT();
+  const { items, update } = usePrescriptions();
   const [life, setLife] = useState<Lifestyle | null>(null);
-  useEffect(() => setLife(readLifestyle()), []);
+  const [connected, setConnected] = useState(false);
+  const [autoOn, setAutoOn] = useState(false);
+  useEffect(() => {
+    setLife(readLifestyle());
+    setConnected(isConnected());
+    setAutoOn(autoSyncOn());
+    preloadGoogle();
+  }, []);
   const sorted = items
     .map((p) => ({ ...p, at: alarmTime(p, life) }))
     .sort((a, b) => (a.at ?? "99").localeCompare(b.at ?? "99"));
   return (
     <div className="min-h-screen">
       <SiteHeader />
-      <main className="mx-auto max-w-5xl px-6 pb-20">
-        <section className="flex flex-col gap-6 py-10 md:flex-row md:items-end md:justify-between">
+      <main className="mx-auto max-w-5xl px-4 pb-20 sm:px-6">
+        <section className="flex flex-col gap-5 py-6 sm:py-10 md:flex-row md:items-end md:justify-between">
           <div>
-            <p className="text-sm font-semibold uppercase tracking-widest text-primary">Today</p>
-            <h1 className="mt-2 text-5xl font-semibold leading-tight md:text-6xl">Active alerts</h1>
-            <p className="mt-3 max-w-md text-muted-foreground">Every dose you need to take, in one calm place.</p>
+            <p className="text-sm font-semibold uppercase tracking-widest text-primary">{t("home.today")}</p>
+            <h1 className="mt-2 break-words text-4xl font-semibold leading-tight sm:text-5xl md:text-6xl">{t("home.title")}</h1>
+            <p className="mt-3 max-w-md text-muted-foreground">{t("home.subtitle")}</p>
           </div>
           <Link
             to="/prescriptions"
             className="inline-flex items-center justify-center rounded-full bg-primary px-6 py-3 font-semibold text-primary-foreground shadow-lg transition hover:opacity-90"
           >
-            + Add prescription
+            {t("home.add")}
           </Link>
         </section>
 
         {!life && (
           <div className="mb-6 rounded-2xl bg-secondary p-4 text-sm text-secondary-foreground">
-            Add your meal times on the{" "}
-            <Link to="/lifestyle" className="font-semibold underline">Lifestyle page</Link> so we can set your alarm times.
+            {t("home.lifestyleHintBefore")}{" "}
+            <Link to="/lifestyle" className="font-semibold underline">{t("home.lifestyleHintLink")}</Link>{" "}
+            {t("home.lifestyleHintAfter")}
           </div>
         )}
         {sorted.length === 0 ? (
           <div className="rounded-2xl border border-dashed bg-card p-12 text-center">
-            <h2 className="text-2xl font-semibold">No active alerts</h2>
-            <p className="mt-2 text-muted-foreground">Add a prescription to start receiving reminders.</p>
+            <h2 className="text-2xl font-semibold">{t("home.emptyTitle")}</h2>
+            <p className="mt-2 text-muted-foreground">{t("home.emptyBody")}</p>
           </div>
         ) : (
           <ul className="grid gap-4 md:grid-cols-2">
             {sorted.map((p) => (
-              <li key={p.id} className="flex items-center gap-5 rounded-2xl border bg-card p-5">
+              <li key={p.id} className="flex items-center gap-4 rounded-2xl border bg-card p-4 sm:gap-5 sm:p-5">
                 <div className="flex h-16 w-16 shrink-0 flex-col items-center justify-center rounded-xl bg-accent text-accent-foreground">
                   <span className="font-display text-lg font-semibold">{p.at ?? "--:--"}</span>
                 </div>
                 <div className="min-w-0">
-                  <h3 className="truncate text-xl font-semibold">{p.name}</h3>
+                  <h3 className="truncate text-xl font-semibold">{p.source === "image" ? t("rx.photoName") : p.name}</h3>
                   <p className="text-sm text-muted-foreground">
-                    {p.dosage ? `Take ${p.dosage}` : "Dosage not set"}
-                    {p.meal && ` · ${p.meal} food`}
+                    {p.dosage ? t("home.take", { dosage: p.dosage }) : t("home.noDosage")}
+                    {p.meal && ` · ${t(p.meal === "before" ? "meal.before" : "meal.after")}`}
                   </p>
+                  <CalendarButton
+                    rx={p}
+                    at={p.at}
+                    onAdded={(calendarEventId) => {
+                      update(p.id, { calendarEventId });
+                      setConnected(true);
+                    }}
+                  />
                 </div>
                 <span className="ml-auto h-3 w-3 shrink-0 animate-pulse rounded-full bg-warning" />
               </li>
             ))}
           </ul>
+        )}
+        {(connected || autoOn) && (
+          <div className="mt-6 space-y-1 text-sm text-muted-foreground">
+            {autoOn && <p>{t("cal.autoOn")}</p>}
+            <button
+              type="button"
+              onClick={() => {
+                disconnect();
+                setAutoCalendar(false);
+                setConnected(false);
+                setAutoOn(false);
+              }}
+              className="underline"
+            >
+              {t("cal.disconnect")}
+            </button>
+          </div>
         )}
       </main>
     </div>

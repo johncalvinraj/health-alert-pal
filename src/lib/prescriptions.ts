@@ -12,6 +12,7 @@ export type Prescription = {
   source: "image" | "manual" | "number";
   reference?: string;
   imageName?: string;
+  calendarEventId?: string;
   createdAt: number;
 };
 
@@ -21,9 +22,9 @@ const KEY = "prescriptions";
 const LIFE = "lifestyle";
 const USER = "user";
 
-function read(): Prescription[] {
+export function readPrescriptions(): Prescription[] {
   try {
-    return JSON.parse(localStorage.getItem(KEY) || "[]");
+    return JSON.parse(sessionStorage.getItem(KEY) || "[]");
   } catch {
     return [];
   }
@@ -31,30 +32,56 @@ function read(): Prescription[] {
 
 export function usePrescriptions() {
   const [items, setItems] = useState<Prescription[]>([]);
-  useEffect(() => setItems(read()), []);
+  useEffect(() => setItems(readPrescriptions()), []);
   const save = (next: Prescription[]) => {
-    localStorage.setItem(KEY, JSON.stringify(next));
+    sessionStorage.setItem(KEY, JSON.stringify(next));
     setItems(next);
   };
   return {
     items,
     add: (p: Omit<Prescription, "id" | "createdAt">) =>
-      save([{ ...p, id: crypto.randomUUID(), createdAt: Date.now() }, ...read()]),
-    remove: (id: string) => save(read().filter((p) => p.id !== id)),
+      save([{ ...p, id: crypto.randomUUID(), createdAt: Date.now() }, ...readPrescriptions()]),
+    remove: (id: string) => save(readPrescriptions().filter((p) => p.id !== id)),
+    update: (id: string, patch: Partial<Prescription>) =>
+      save(readPrescriptions().map((p) => (p.id === id ? { ...p, ...patch } : p))),
   };
 }
 
 export function readLifestyle(): Lifestyle | null {
   try {
-    return JSON.parse(localStorage.getItem(LIFE) || "null");
+    return JSON.parse(sessionStorage.getItem(LIFE) || "null");
   } catch {
     return null;
   }
 }
-export const saveLifestyle = (l: Lifestyle) => localStorage.setItem(LIFE, JSON.stringify(l));
-export const saveUser = (email: string) => localStorage.setItem(USER, JSON.stringify({ email }));
+export const saveLifestyle = (l: Lifestyle) => sessionStorage.setItem(LIFE, JSON.stringify(l));
+export type User = { email: string; autoCalendar?: boolean };
+export function readUser(): User | null {
+  try {
+    return JSON.parse(sessionStorage.getItem(USER) || "null");
+  } catch {
+    return null;
+  }
+}
+export const saveUser = (email: string, autoCalendar = false) =>
+  sessionStorage.setItem(USER, JSON.stringify({ email, autoCalendar }));
+export const setAutoCalendar = (on: boolean) => {
+  const u = readUser();
+  if (u) saveUser(u.email, on);
+};
 
-const slotMeal: Record<Slot, keyof Lifestyle> = { morning: "breakfast", evening: "lunch", night: "dinner" };
+/** Storage-level update, for code outside a component (e.g. calendar sync). */
+export const patchPrescription = (id: string, patch: Partial<Prescription>) =>
+  sessionStorage.setItem(
+    KEY,
+    JSON.stringify(readPrescriptions().map((p) => (p.id === id ? { ...p, ...patch } : p))),
+  );
+
+const slotMeal: Record<Slot, keyof Lifestyle> = {
+  morning: "breakfast",
+  evening: "lunch",
+  night: "dinner",
+};
 
 /** Meal time minus 10 min if before food, plus 10 min if after food. */
 export function alarmTime(p: Prescription, l: Lifestyle | null): string | null {
