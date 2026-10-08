@@ -61,7 +61,7 @@ export function alarmTime(p: Prescription, l: Lifestyle | null): string | null {
   if (!p.slot || !p.meal || !l) return null;
   const base = l[slotMeal[p.slot]];
   if (!base) return null;
-  const [h, m] = base.split(":").map(Number);
+  const [h = 0, m = 0] = base.split(":").map(Number);
   const total = (h * 60 + m + (p.meal === "before" ? -10 : 10) + 1440) % 1440;
   return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
 }
