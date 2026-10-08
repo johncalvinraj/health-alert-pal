@@ -1,6 +1,8 @@
 import type { Translate } from "@/lib/i18n";
 import {
   alarmTime,
+  courseEnd,
+  isActive,
   patchPrescription,
   readLifestyle,
   readPrescriptions,
@@ -11,11 +13,17 @@ import { addDailyEvent, calendarConfigured, connect, type DailyEvent } from "@/l
 
 export function eventFor(rx: Prescription, at: string, t: Translate): DailyEvent {
   const name = rx.source === "image" ? t("rx.photoName") : rx.name;
+  const until = courseEnd(rx);
+  const lang = typeof document === "undefined" ? undefined : document.documentElement.lang;
+  const stop = until
+    ? t("cal.courseEnds", { date: until.toLocaleDateString(lang, { dateStyle: "long" }) })
+    : t("cal.howToStop");
   return {
+    ...(until ? { until } : {}),
     title: rx.dosage
       ? t("cal.eventTitle", { dosage: rx.dosage, name })
       : t("cal.eventTitleNoDose", { name }),
-    description: [rx.meal && t(`meal.${rx.meal}`), t("cal.eventBody"), t("cal.howToStop")]
+    description: [rx.meal && t(`meal.${rx.meal}`), t("cal.eventBody"), stop]
       .filter(Boolean)
       .join("\n"),
     time: at,
@@ -35,7 +43,7 @@ export async function syncAllAlerts(t: Translate, loginHint?: string) {
   let added = 0;
   for (const rx of readPrescriptions()) {
     const at = alarmTime(rx, life);
-    if (!at || rx.calendarEventId) continue;
+    if (!at || rx.calendarEventId || !isActive(rx)) continue;
     patchPrescription(rx.id, { calendarEventId: await addDailyEvent(eventFor(rx, at, t)) });
     added++;
   }

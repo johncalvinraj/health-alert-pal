@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { SiteHeader } from "@/components/SiteHeader";
-import { usePrescriptions, type Slot, type Meal } from "@/lib/prescriptions";
+import { isActive, usePrescriptions, type Slot, type Meal } from "@/lib/prescriptions";
 import { useT, type Key } from "@/lib/i18n";
 import { removeEvent } from "@/lib/google-calendar";
 import { autoSyncOn, syncAllAlerts } from "@/lib/calendar-sync";
@@ -42,12 +42,19 @@ function PrescriptionsPage() {
   };
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
-  const [f, setF] = useState({ name: "", dosage: "", slot: "", meal: "", reference: "" });
+  const [f, setF] = useState({ name: "", dosage: "", slot: "", meal: "", reference: "", days: "" });
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setF({ ...f, [k]: e.target.value });
 
+  // Course length: empty means lifetime, otherwise a whole number of days.
+  const courseDays = f.days.trim() === "" ? undefined : Number(f.days);
+  const courseOk = courseDays === undefined || (Number.isInteger(courseDays) && courseDays >= 1);
   const canSubmit =
-    mode === "image" ? !!file : mode === "number" ? f.reference.trim() !== "" : f.name.trim() !== "";
+    mode === "image"
+      ? !!file
+      : mode === "number"
+        ? f.reference.trim() !== ""
+        : f.name.trim() !== "" && courseOk;
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -60,6 +67,7 @@ function PrescriptionsPage() {
       ...(mode !== "number" && f.meal ? { meal: f.meal as Meal } : {}),
       ...(f.reference ? { reference: f.reference } : {}),
       ...(file ? { imageName: file.name } : {}),
+      ...(mode === "manual" && courseDays ? { courseDays } : {}),
     });
     // Opted in at sign-up: add the new alert to Google Calendar. On failure, the
     // per-alert button on the home page is the fallback.
@@ -159,6 +167,33 @@ function PrescriptionsPage() {
               </div>
             </div>}
 
+            {mode === "manual" && (
+              <div>
+                <label htmlFor="course-days" className="mb-1 block text-sm font-semibold">{t("rx.course")}</label>
+                <div className="relative">
+                  <input
+                    id="course-days"
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    step={1}
+                    className={`${field} pr-20`}
+                    placeholder={`${t("rx.lifetime")} (∞)`}
+                    value={f.days}
+                    onChange={set("days")}
+                    aria-describedby="course-hint"
+                    aria-invalid={!courseOk}
+                  />
+                  <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-sm font-semibold text-muted-foreground">
+                    {t("rx.days")}
+                  </span>
+                </div>
+                <p id="course-hint" className={`mt-1 text-xs ${courseOk ? "text-muted-foreground" : "font-semibold text-destructive"}`}>
+                  {t("rx.courseHint")}
+                </p>
+              </div>
+            )}
+
             <button
               disabled={!canSubmit || saving}
               className="w-full rounded-full bg-primary py-3 font-semibold text-primary-foreground transition hover:opacity-90 disabled:opacity-40"
@@ -186,7 +221,12 @@ function PrescriptionsPage() {
                     <p className="text-xs text-muted-foreground">
                       {t(p.source === "image" ? "rx.fromPhoto" : p.source === "number" ? "rx.fromNumber" : "rx.manual")}
                       {p.slot && ` · ${t(`slot.${p.slot}`)}`}{p.meal && `, ${t(`meal.${p.meal}`)}`}
+                      {p.source === "manual" &&
+                        ` · ${p.courseDays ? t("rx.forDays", { n: String(p.courseDays) }) : t("rx.lifetime")}`}
                     </p>
+                    {!isActive(p) && (
+                      <p className="text-xs font-semibold text-muted-foreground">{t("rx.finished")}</p>
+                    )}
                   </div>
                   <button
                     disabled={removing === p.id}

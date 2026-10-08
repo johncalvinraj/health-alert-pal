@@ -13,6 +13,8 @@ export type Prescription = {
   reference?: string;
   imageName?: string;
   calendarEventId?: string;
+  /** Length of the course in days, counting the day it was added. Unset = lifetime. */
+  courseDays?: number;
   createdAt: number;
 };
 
@@ -91,4 +93,28 @@ export function alarmTime(p: Prescription, l: Lifestyle | null): string | null {
   const [h = 0, m = 0] = base.split(":").map(Number);
   const total = (h * 60 + m + (p.meal === "before" ? -10 : 10) + 1440) % 1440;
   return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+}
+
+const DAY = 86_400_000;
+const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
+/** Last moment of the course's final day (local time), or null for lifetime. */
+export function courseEnd(p: Prescription): Date | null {
+  if (!p.courseDays) return null;
+  const end = startOfDay(new Date(p.createdAt));
+  end.setDate(end.getDate() + p.courseDays);
+  return new Date(end.getTime() - 1);
+}
+
+/** Lifetime prescriptions are always active; courses until the end of their last day. */
+export const isActive = (p: Prescription, now = new Date()) => {
+  const end = courseEnd(p);
+  return !end || now <= end;
+};
+
+/** Days left including today (1 = last day), or null for lifetime. */
+export function daysLeft(p: Prescription, now = new Date()): number | null {
+  const end = courseEnd(p);
+  if (!end) return null;
+  return Math.max(0, Math.round((startOfDay(end).getTime() - startOfDay(now).getTime()) / DAY) + 1);
 }

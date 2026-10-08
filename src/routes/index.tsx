@@ -1,7 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { SiteHeader } from "@/components/SiteHeader";
 import { useEffect, useState } from "react";
-import { usePrescriptions, readLifestyle, alarmTime, type Lifestyle } from "@/lib/prescriptions";
+import { Clock, Infinity as InfinityIcon } from "lucide-react";
+import { usePrescriptions, readLifestyle, alarmTime, daysLeft, isActive, type Lifestyle, type Prescription } from "@/lib/prescriptions";
 import { useT } from "@/lib/i18n";
 import { CalendarButton } from "@/components/CalendarButton";
 import { disconnect, isConnected, preloadGoogle } from "@/lib/google-calendar";
@@ -22,6 +23,12 @@ export const Route = createFileRoute("/")({
 
 function Home() {
   const { t } = useT();
+  // How long this alert keeps going: course countdown, or lifetime.
+  const duration = (p: Prescription) => {
+    const left = daysLeft(p);
+    if (left === null) return t("rx.lifetime");
+    return left === 1 ? t("home.lastDay") : t("home.daysLeft", { n: String(left) });
+  };
   const { items, update } = usePrescriptions();
   const [life, setLife] = useState<Lifestyle | null>(null);
   const [connected, setConnected] = useState(false);
@@ -32,7 +39,9 @@ function Home() {
     setAutoOn(autoSyncOn());
     preloadGoogle();
   }, []);
+  // Courses that have finished no longer raise alerts.
   const sorted = items
+    .filter((p) => isActive(p))
     .map((p) => ({ ...p, at: alarmTime(p, life) }))
     .sort((a, b) => (a.at ?? "99").localeCompare(b.at ?? "99"));
   return (
@@ -72,11 +81,20 @@ function Home() {
                 <div className="flex h-16 w-16 shrink-0 flex-col items-center justify-center rounded-xl bg-accent text-accent-foreground">
                   <span className="font-display text-lg font-semibold">{p.at ?? "--:--"}</span>
                 </div>
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <h3 className="truncate text-xl font-semibold">{p.source === "image" ? t("rx.photoName") : p.name}</h3>
                   <p className="text-sm text-muted-foreground">
                     {p.dosage ? t("home.take", { dosage: p.dosage }) : t("home.noDosage")}
                     {p.meal && ` · ${t(p.meal === "before" ? "meal.before" : "meal.after")}`}
+                    {" · "}
+                    <span className={`whitespace-nowrap font-semibold ${p.courseDays ? "text-primary" : ""}`}>
+                      {p.courseDays ? (
+                        <Clock className="mr-1 inline h-3.5 w-3.5 align-[-2px]" aria-hidden />
+                      ) : (
+                        <InfinityIcon className="mr-1 inline h-3.5 w-3.5 align-[-2px]" aria-hidden />
+                      )}
+                      {duration(p)}
+                    </span>
                   </p>
                   <CalendarButton
                     rx={p}
@@ -87,7 +105,7 @@ function Home() {
                     }}
                   />
                 </div>
-                <span className="ml-auto h-3 w-3 shrink-0 animate-pulse rounded-full bg-warning" />
+                <span className="h-3 w-3 shrink-0 animate-pulse rounded-full bg-warning" />
               </li>
             ))}
           </ul>

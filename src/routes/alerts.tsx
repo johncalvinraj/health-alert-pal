@@ -5,6 +5,7 @@ import { SiteHeader } from "@/components/SiteHeader";
 import { translate, useT, type Translate } from "@/lib/i18n";
 import {
   alarmTime,
+  isActive,
   readLifestyle,
   usePrescriptions,
   type Lifestyle,
@@ -34,19 +35,50 @@ const REPEAT_MS = 20_000;
 const MAX_PLAYS = 5;
 const GRACE_MIN = 30;
 
-/** The prescription due soonest from now (alerts up to 30 min overdue still count as now). */
-function nextDue(items: Prescription[], life: Lifestyle | null) {
+type Group = { at: string | null; meal: Prescription["meal"]; items: Prescription[] };
+
+/**
+ * Demo: the next due timing (same time of day and before/after food) with every
+ * active prescription that shares it. Alerts up to 30 min overdue still count as now.
+ */
+function nextDueGroup(items: Prescription[], life: Lifestyle | null): Group | undefined {
   const d = new Date();
   const now = d.getHours() * 60 + d.getMinutes();
-  const rank = (p: Prescription, i: number) => {
-    const at = alarmTime(p, life);
-    if (!at) return 1440 + i;
-    const [h = 0, m = 0] = at.split(":").map(Number);
-    return (h * 60 + m - now + GRACE_MIN + 1440) % 1440;
-  };
-  return items
-    .map((p, i) => ({ p, r: rank(p, i), at: alarmTime(p, life) }))
-    .sort((a, b) => a.r - b.r)[0];
+  const groups = new Map<string, Group & { rank: number }>();
+  items
+    .filter((p) => isActive(p))
+    .forEach((p, i) => {
+      const at = alarmTime(p, life);
+      const [h = 0, m = 0] = (at ?? "").split(":").map(Number);
+      const rank = at ? (h * 60 + m - now + GRACE_MIN + 1440) % 1440 : 1440 + i;
+      const key = p.slot && p.meal ? `${p.slot}|${p.meal}` : p.id;
+      const g = groups.get(key);
+      if (g) g.items.push(p);
+      else groups.set(key, { at, meal: p.meal, items: [p], rank });
+    });
+  return [...groups.values()].sort((a, b) => a.rank - b.rank)[0];
+}
+
+const drugName = (p: Prescription, tr: Translate) =>
+  p.source === "image" ? tr("rx.photoName") : p.name;
+
+/** Spoken text for a group, e.g. "Take 500 mg of A and 1 tablet of B. Before food." */
+function spoken(g: Group, tr: Translate) {
+  const [only] = g.items;
+  let text: string;
+  if (g.items.length === 1 && only) {
+    const name = drugName(only, tr);
+    text = only.dosage
+      ? tr("alert.speak", { dosage: only.dosage, name })
+      : tr("alert.speakNoDose", { name });
+  } else {
+    const parts = g.items.map((p) =>
+      p.dosage ? tr("alert.item", { dosage: p.dosage, name: drugName(p, tr) }) : drugName(p, tr),
+    );
+    const list = `${parts.slice(0, -1).join(", ")} ${tr("common.and")} ${parts.at(-1)}`;
+    text = tr("alert.speakMany", { list });
+  }
+  return g.meal ? `${text} ${tr(`meal.${g.meal}`)}.` : text;
 }
 
 function AlertPage() {
@@ -58,9 +90,9 @@ function AlertPage() {
   const [voice, setVoice] = useState<"idle" | "playing" | "blocked" | "unsupported">("idle");
   const run = useRef(0);
 
-  const due = nextDue(items, life);
-  const rx = due?.p;
-  const name = rx ? (rx.source === "image" ? t("rx.photoName") : rx.name) : "";
+  const due = nextDueGroup(items, life);
+  const rx = due?.items[0];
+  const many = (due?.items.length ?? 0) > 1;
 
   const stop = () => {
     run.current++;
@@ -70,21 +102,12 @@ function AlertPage() {
 
   // Chime + spoken reminder, repeated until the user responds.
   const announce = async () => {
-    if (!rx) return;
+    if (!due) return;
     const id = ++run.current;
-    const say = (tr: Translate) => {
-      const drug = rx.source === "image" ? tr("rx.photoName") : rx.name;
-      return [
-        rx.dosage
-          ? tr("alert.speak", { dosage: rx.dosage, name: drug })
-          : tr("alert.speakNoDose", { name: drug }),
-        rx.meal ? tr(`meal.${rx.meal}`) + "." : "",
-      ].join(" ");
-    };
 
     for (let i = 0; i < MAX_PLAYS && run.current === id; i++) {
       setVoice("playing");
-      const result = await speakAlert(say(t), lang, say(translate("en")));
+      const result = await speakAlert(spoken(due, t), lang, spoken(due, translate("en")));
       if (run.current !== id) return;
       if (result !== "ok") return setVoice(result);
       setVoice("idle");
@@ -96,13 +119,13 @@ function AlertPage() {
     if (status === "pending" && rx) void announce();
     return stop;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rx?.id, status, lang]);
+  }, [due?.items.map((p) => p.id).join(), status, lang]);
 
   return (
     <div className="min-h-screen">
       <SiteHeader />
       <main className="mx-auto flex max-w-md flex-col items-center px-4 py-8 text-center sm:px-6 sm:py-12">
-        {!rx ? (
+        {!due || !rx ? (
           <div className="w-full rounded-3xl border border-dashed bg-card p-8">
             <h1 className="text-3xl font-semibold">{t("alert.emptyTitle")}</h1>
             <p className="mt-2 text-muted-foreground">{t("alert.emptyBody")}</p>
@@ -125,11 +148,39 @@ function AlertPage() {
               </p>
             )}
             <div className="mt-6 w-full rounded-3xl border bg-card p-6 shadow-lg sm:p-10">
-              <h1 className="break-words text-4xl font-semibold sm:text-5xl">{name}</h1>
-              <p className="mt-4 text-muted-foreground">{t("alert.dosage")}</p>
-              <p className="font-display text-4xl font-semibold text-primary">{rx.dosage || "—"}</p>
-              {rx.meal && (
-                <p className="mt-1 text-sm text-muted-foreground">{t(`meal.${rx.meal}`)}</p>
+              {many ? (
+                <>
+                  <h1 className="text-3xl font-semibold sm:text-4xl">
+                    {t("alert.count", { n: String(due.items.length) })}
+                  </h1>
+                  <ul className="mt-5 divide-y text-left">
+                    {due.items.map((p) => (
+                      <li key={p.id} className="flex items-baseline justify-between gap-4 py-3">
+                        <span className="min-w-0 break-words text-xl font-semibold">
+                          {drugName(p, t)}
+                        </span>
+                        <span className="shrink-0 font-display text-xl font-semibold text-primary">
+                          {p.dosage || "—"}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              ) : (
+                <>
+                  <h1 className="break-words text-4xl font-semibold sm:text-5xl">
+                    {drugName(rx, t)}
+                  </h1>
+                  <p className="mt-4 text-muted-foreground">{t("alert.dosage")}</p>
+                  <p className="font-display text-4xl font-semibold text-primary">
+                    {rx.dosage || "—"}
+                  </p>
+                </>
+              )}
+              {due.meal && (
+                <p className="mt-1 text-sm font-semibold text-muted-foreground">
+                  {t(`meal.${due.meal}`)}
+                </p>
               )}
 
               {status === "pending" && (

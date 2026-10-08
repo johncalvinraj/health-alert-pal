@@ -109,7 +109,13 @@ export function disconnect() {
   setToken(null);
 }
 
-export type DailyEvent = { title: string; description: string; time: string };
+export type DailyEvent = {
+  title: string;
+  description: string;
+  time: string;
+  /** Last moment the event may occur; omit to repeat forever. */
+  until?: Date;
+};
 
 /** Creates a daily repeating event at `time` (HH:MM, local) with a pop-up reminder. Returns the event id. */
 export async function addDailyEvent(e: DailyEvent): Promise<string> {
@@ -130,7 +136,7 @@ export async function addDailyEvent(e: DailyEvent): Promise<string> {
       description: e.description,
       start: { dateTime: local(start), timeZone: tz },
       end: { dateTime: local(end), timeZone: tz },
-      recurrence: ["RRULE:FREQ=DAILY"],
+      recurrence: [e.until ? `RRULE:FREQ=DAILY;UNTIL=${utcStamp(e.until)}` : "RRULE:FREQ=DAILY"],
       reminders: { useDefault: false, overrides: [{ method: "popup", minutes: 0 }] },
     }),
   });
@@ -153,3 +159,9 @@ export async function removeEvent(id: string): Promise<void> {
 }
 
 const pad = (n: number) => String(n).padStart(2, "0");
+/** RFC 5545 UTC timestamp, e.g. 20261015T183000Z (Google requires UTC for UNTIL). */
+const utcStamp = (d: Date) =>
+  d
+    .toISOString()
+    .replace(/[-:]/g, "")
+    .replace(/\.\d{3}/, "");
