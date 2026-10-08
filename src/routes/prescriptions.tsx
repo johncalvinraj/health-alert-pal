@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { SiteHeader } from "@/components/SiteHeader";
-import { usePrescriptions } from "@/lib/prescriptions";
+import { usePrescriptions, type Slot, type Meal } from "@/lib/prescriptions";
 
 export const Route = createFileRoute("/prescriptions")({
   head: () => ({
@@ -24,7 +24,7 @@ function PrescriptionsPage() {
   const [mode, setMode] = useState<Mode>("image");
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
-  const [f, setF] = useState({ name: "", dosage: "", frequency: "", time: "", reference: "" });
+  const [f, setF] = useState({ name: "", dosage: "", slot: "", meal: "", reference: "" });
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setF({ ...f, [k]: e.target.value });
 
@@ -38,8 +38,8 @@ function PrescriptionsPage() {
       source: mode,
       name: f.name || (mode === "image" ? `Prescription photo` : `Rx #${f.reference}`),
       dosage: f.dosage,
-      frequency: f.frequency,
-      time: f.time,
+      ...(mode !== "number" && f.slot ? { slot: f.slot as Slot } : {}),
+      ...(mode !== "number" && f.meal ? { meal: f.meal as Meal } : {}),
       ...(f.reference ? { reference: f.reference } : {}),
       ...(file ? { imageName: file.name } : {}),
     });
@@ -111,26 +111,29 @@ function PrescriptionsPage() {
               </div>
             )}
 
-            <div className="grid gap-4 sm:grid-cols-3">
+            {mode !== "number" && <div className="grid gap-4 sm:grid-cols-3">
               <div>
                 <label className="mb-1 block text-sm font-semibold">Dosage</label>
                 <input className={field} placeholder="500 mg" value={f.dosage} onChange={set("dosage")} />
               </div>
               <div>
-                <label className="mb-1 block text-sm font-semibold">Frequency</label>
-                <select className={field} value={f.frequency} onChange={set("frequency")}>
+                <label className="mb-1 block text-sm font-semibold">When</label>
+                <select className={field} value={f.slot} onChange={set("slot")}>
                   <option value="">Select</option>
-                  <option>Once daily</option>
-                  <option>Twice daily</option>
-                  <option>Three times daily</option>
-                  <option>As needed</option>
+                  <option value="morning">Morning</option>
+                  <option value="evening">Evening</option>
+                  <option value="night">Night</option>
                 </select>
               </div>
               <div>
-                <label className="mb-1 block text-sm font-semibold">Alert time</label>
-                <input type="time" className={field} value={f.time} onChange={set("time")} />
+                <label className="mb-1 block text-sm font-semibold">Food</label>
+                <select className={field} value={f.meal} onChange={set("meal")}>
+                  <option value="">Select</option>
+                  <option value="before">Before food</option>
+                  <option value="after">After food</option>
+                </select>
               </div>
-            </div>
+            </div>}
 
             <button
               disabled={!canSubmit}
@@ -153,7 +156,7 @@ function PrescriptionsPage() {
                     <p className="font-semibold">{p.name}</p>
                     <p className="text-xs text-muted-foreground">
                       {p.source === "image" ? "From photo" : p.source === "number" ? "From number" : "Manual"}
-                      {p.time && ` · ${p.time}`}
+                      {p.slot && ` · ${p.slot}`}{p.meal && `, ${p.meal} food`}
                     </p>
                   </div>
                   <button onClick={() => remove(p.id)} className="text-sm text-destructive hover:underline">
