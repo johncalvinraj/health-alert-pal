@@ -40,8 +40,8 @@ function PrescriptionsPage() {
       dosage: f.dosage,
       frequency: f.frequency,
       time: f.time,
-      reference: f.reference || undefined,
-      imageName: file?.name,
+      ...(f.reference ? { reference: f.reference } : {}),
+      ...(file ? { imageName: file.name } : {}),
     });
     navigate({ to: "/" });
   };
