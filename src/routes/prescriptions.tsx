@@ -5,6 +5,7 @@ import { isActive, usePrescriptions, type Slot, type Meal } from "@/lib/prescrip
 import { useT, type Key } from "@/lib/i18n";
 import { removeEvent } from "@/lib/google-calendar";
 import { autoSyncOn, syncAllAlerts } from "@/lib/calendar-sync";
+import { ApiError } from "@/lib/api";
 
 export const Route = createFileRoute("/prescriptions")({
   head: () => ({
@@ -23,22 +24,32 @@ const field = "w-full rounded-xl border bg-background px-4 py-3 outline-none foc
 
 function PrescriptionsPage() {
   const { t } = useT();
-  const { items, add, remove } = usePrescriptions();
+  const { items, loadError, add, remove } = usePrescriptions();
   const navigate = useNavigate();
   const [mode, setMode] = useState<Mode>("image");
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<Key | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
   const [removeNotice, setRemoveNotice] = useState(false);
+  const [removeError, setRemoveError] = useState(false);
 
-  // Removing an alert also stops its repeating Google Calendar event.
+  // Removing an alert also stops its repeating Google Calendar event. The server delete
+  // goes first, so a failed delete leaves the calendar event in place.
   const removeRx = async (p: (typeof items)[number]) => {
     setRemoveNotice(false);
-    if (p.calendarEventId) {
-      setRemoving(p.id);
-      await removeEvent(p.calendarEventId).catch(() => setRemoveNotice(true));
+    setRemoveError(false);
+    setRemoving(p.id);
+    try {
+      await remove(p.id);
+    } catch {
+      setRemoveError(true);
       setRemoving(null);
+      return;
     }
-    remove(p.id);
+    if (p.calendarEventId) {
+      await removeEvent(p.calendarEventId).catch(() => setRemoveNotice(true));
+    }
+    setRemoving(null);
   };
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
@@ -59,20 +70,28 @@ function PrescriptionsPage() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSubmit || saving) return;
-    add({
-      source: mode,
-      name: f.name || (mode === "image" ? `Prescription photo` : `Rx #${f.reference}`),
-      dosage: f.dosage,
-      ...(mode !== "number" && f.slot ? { slot: f.slot as Slot } : {}),
-      ...(mode !== "number" && f.meal ? { meal: f.meal as Meal } : {}),
-      ...(f.reference ? { reference: f.reference } : {}),
-      ...(file ? { imageName: file.name } : {}),
-      ...(mode === "manual" && courseDays ? { courseDays } : {}),
-    });
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await add({
+        source: mode,
+        name: f.name || (mode === "image" ? `Prescription photo` : `Rx #${f.reference}`),
+        dosage: f.dosage,
+        ...(mode !== "number" && f.slot ? { slot: f.slot as Slot } : {}),
+        ...(mode !== "number" && f.meal ? { meal: f.meal as Meal } : {}),
+        ...(f.reference ? { reference: f.reference } : {}),
+        ...(file ? { imageName: file.name } : {}),
+        ...(mode === "manual" && courseDays ? { courseDays } : {}),
+      });
+    } catch (e) {
+      // 400: the server needs a dosage and before/after food. Otherwise it's unreachable.
+      setSaveError(e instanceof ApiError && e.status === 400 ? "rx.saveInvalid" : "rx.saveFailed");
+      setSaving(false);
+      return;
+    }
     // Opted in at sign-up: add the new alert to Google Calendar. On failure, the
     // per-alert button on the home page is the fallback.
     if (autoSyncOn()) {
-      setSaving(true);
       await syncAllAlerts(t).catch(() => {});
     }
     navigate({ to: "/" });
@@ -200,11 +219,27 @@ function PrescriptionsPage() {
             >
               {t(saving ? "common.saving" : "rx.save")}
             </button>
+            {saveError && (
+              <p
+                role="alert"
+                className="rounded-xl bg-destructive/10 p-3 text-sm font-semibold text-destructive"
+              >
+                {t(saveError)}
+              </p>
+            )}
           </form>
         </section>
 
         <aside className="md:pt-28">
           <h2 className="mb-4 text-2xl font-semibold">{t("rx.yours")}</h2>
+          {(loadError || removeError) && (
+            <p
+              role="alert"
+              className="mb-4 rounded-xl bg-destructive/10 p-3 text-sm font-semibold text-destructive"
+            >
+              {t(loadError ? "api.loadFailed" : "rx.removeFailed")}
+            </p>
+          )}
           {removeNotice && (
             <p className="mb-4 rounded-xl bg-destructive/10 p-3 text-sm font-semibold text-destructive">
               {t("rx.calRemoveFailed")}

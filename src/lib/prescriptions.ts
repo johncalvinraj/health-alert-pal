@@ -1,4 +1,11 @@
 import { useEffect, useState } from "react";
+import {
+  ApiError,
+  createPrescription,
+  deletePrescription,
+  listPrescriptions,
+  type NewPrescription,
+} from "@/lib/api";
 
 export type Slot = "morning" | "evening" | "night";
 export type Meal = "before" | "after";
@@ -20,13 +27,39 @@ export type Prescription = {
 
 export type Lifestyle = { breakfast: string; lunch: string; dinner: string };
 
-const KEY = "prescriptions";
+// Prescriptions live in the Medicare API. KEY holds a copy of the last list it returned, so code
+// outside components (calendar sync) can read it without waiting for a request.
+const KEY = "prescriptions.api";
+// Google Calendar event ids stay in the browser (prescription id -> event id).
+const CAL = "calendarEvents";
 const LIFE = "lifestyle";
 const USER = "user";
 
+function readCalendarIds(): Record<string, string> {
+  try {
+    return JSON.parse(sessionStorage.getItem(CAL) || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function setCalendarId(id: string, eventId: string | undefined) {
+  const ids = readCalendarIds();
+  if (eventId) ids[id] = eventId;
+  else delete ids[id];
+  sessionStorage.setItem(CAL, JSON.stringify(ids));
+}
+
+const writeCache = (list: Prescription[]) => sessionStorage.setItem(KEY, JSON.stringify(list));
+
 export function readPrescriptions(): Prescription[] {
   try {
-    return JSON.parse(sessionStorage.getItem(KEY) || "[]");
+    const ids = readCalendarIds();
+    const list: Prescription[] = JSON.parse(sessionStorage.getItem(KEY) || "[]");
+    return list.map((p) => {
+      const eventId = ids[p.id];
+      return eventId ? { ...p, calendarEventId: eventId } : p;
+    });
   } catch {
     return [];
   }
@@ -34,18 +67,41 @@ export function readPrescriptions(): Prescription[] {
 
 export function usePrescriptions() {
   const [items, setItems] = useState<Prescription[]>([]);
-  useEffect(() => setItems(readPrescriptions()), []);
-  const save = (next: Prescription[]) => {
-    sessionStorage.setItem(KEY, JSON.stringify(next));
-    setItems(next);
-  };
+  const [loadError, setLoadError] = useState(false);
+  useEffect(() => {
+    setItems(readPrescriptions());
+    listPrescriptions()
+      .then((list) => {
+        writeCache(list);
+        setItems(readPrescriptions());
+        setLoadError(false);
+      })
+      .catch(() => setLoadError(true));
+  }, []);
   return {
     items,
-    add: (p: Omit<Prescription, "id" | "createdAt">) =>
-      save([{ ...p, id: crypto.randomUUID(), createdAt: Date.now() }, ...readPrescriptions()]),
-    remove: (id: string) => save(readPrescriptions().filter((p) => p.id !== id)),
-    update: (id: string, patch: Partial<Prescription>) =>
-      save(readPrescriptions().map((p) => (p.id === id ? { ...p, ...patch } : p))),
+    /** True when the API couldn't be reached; items then show the last list loaded. */
+    loadError,
+    /** Saves to the API. Throws ApiError if it's rejected or the server is unreachable. */
+    add: async (p: NewPrescription) => {
+      const saved = await createPrescription(p);
+      writeCache([saved, ...readPrescriptions()]);
+      setItems(readPrescriptions());
+    },
+    /** Deletes from the API. Already deleted (404) counts as success. */
+    remove: async (id: string) => {
+      await deletePrescription(id).catch((e) => {
+        if (!(e instanceof ApiError && e.status === 404)) throw e;
+      });
+      setCalendarId(id, undefined);
+      writeCache(readPrescriptions().filter((p) => p.id !== id));
+      setItems(readPrescriptions());
+    },
+    /** Only the Google Calendar link can change; it's stored in this browser. */
+    update: (id: string, patch: Pick<Prescription, "calendarEventId">) => {
+      setCalendarId(id, patch.calendarEventId);
+      setItems(readPrescriptions());
+    },
   };
 }
 
@@ -73,11 +129,8 @@ export const setAutoCalendar = (on: boolean) => {
 };
 
 /** Storage-level update, for code outside a component (e.g. calendar sync). */
-export const patchPrescription = (id: string, patch: Partial<Prescription>) =>
-  sessionStorage.setItem(
-    KEY,
-    JSON.stringify(readPrescriptions().map((p) => (p.id === id ? { ...p, ...patch } : p))),
-  );
+export const patchPrescription = (id: string, patch: Pick<Prescription, "calendarEventId">) =>
+  setCalendarId(id, patch.calendarEventId);
 
 const slotMeal: Record<Slot, keyof Lifestyle> = {
   morning: "breakfast",

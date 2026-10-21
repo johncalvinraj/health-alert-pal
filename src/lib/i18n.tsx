@@ -79,6 +79,12 @@ const en = {
   "rx.fromNumber": "From number",
   "rx.manual": "Manual",
   "rx.remove": "Remove",
+  "rx.removeFailed": "Couldn't remove this prescription. Please try again.",
+  "rx.saveInvalid": "Couldn't save: add a dosage and choose before or after food.",
+  "rx.saveFailed":
+    "Couldn't reach the server, so your prescription wasn't saved. Please try again.",
+  "api.loadFailed":
+    "Couldn't load your prescriptions. Check that the server is running, then refresh.",
   "rx.photoName": "Prescription photo",
   "rx.course": "Course length",
   "rx.days": "Days",
@@ -199,6 +205,13 @@ const ta: Record<Key, string> = {
   "rx.fromNumber": "எண்ணிலிருந்து",
   "rx.manual": "கைமுறை",
   "rx.remove": "நீக்கு",
+  "rx.removeFailed": "இந்த மருந்துச் சீட்டை நீக்க முடியவில்லை. மீண்டும் முயற்சிக்கவும்.",
+  "rx.saveInvalid":
+    "சேமிக்க முடியவில்லை: அளவைச் சேர்த்து, உணவுக்கு முன்பா பின்பா என்பதைத் தேர்ந்தெடுக்கவும்.",
+  "rx.saveFailed":
+    "சர்வரை அணுக முடியவில்லை, அதனால் உங்கள் மருந்துச் சீட்டு சேமிக்கப்படவில்லை. மீண்டும் முயற்சிக்கவும்.",
+  "api.loadFailed":
+    "உங்கள் மருந்துச் சீட்டுகளை ஏற்ற முடியவில்லை. சர்வர் இயங்குகிறதா எனச் சரிபார்த்து, பக்கத்தைப் புதுப்பிக்கவும்.",
   "rx.photoName": "மருந்துச் சீட்டு படம்",
   "rx.course": "சிகிச்சை காலம்",
   "rx.days": "நாட்கள்",
@@ -319,6 +332,12 @@ const es: Record<Key, string> = {
   "rx.fromNumber": "Desde número",
   "rx.manual": "Manual",
   "rx.remove": "Eliminar",
+  "rx.removeFailed": "No se pudo eliminar esta receta. Inténtalo de nuevo.",
+  "rx.saveInvalid": "No se pudo guardar: añade la dosis y elige antes o después de comer.",
+  "rx.saveFailed":
+    "No se pudo conectar con el servidor, así que tu receta no se guardó. Inténtalo de nuevo.",
+  "api.loadFailed":
+    "No se pudieron cargar tus recetas. Comprueba que el servidor esté en marcha y recarga la página.",
   "rx.photoName": "Foto de receta",
   "rx.course": "Duración del tratamiento",
   "rx.days": "Días",

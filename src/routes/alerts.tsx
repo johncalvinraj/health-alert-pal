@@ -83,7 +83,7 @@ function spoken(g: Group, tr: Translate) {
 
 function AlertPage() {
   const { t, lang } = useT();
-  const { items } = usePrescriptions();
+  const { items, loadError } = usePrescriptions();
   const [life, setLife] = useState<Lifestyle | null>(null);
   useEffect(() => setLife(readLifestyle()), []);
   const [status, setStatus] = useState<"pending" | "taken" | "later">("pending");
@@ -125,6 +125,14 @@ function AlertPage() {
     <div className="min-h-screen">
       <SiteHeader />
       <main className="mx-auto flex max-w-md flex-col items-center px-4 py-8 text-center sm:px-6 sm:py-12">
+        {loadError && (
+          <p
+            role="alert"
+            className="mb-6 w-full rounded-2xl bg-destructive/10 p-4 text-sm font-semibold text-destructive"
+          >
+            {t("api.loadFailed")}
+          </p>
+        )}
         {!due || !rx ? (
           <div className="w-full rounded-3xl border border-dashed bg-card p-8">
             <h1 className="text-3xl font-semibold">{t("alert.emptyTitle")}</h1>

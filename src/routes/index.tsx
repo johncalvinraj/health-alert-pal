@@ -29,7 +29,7 @@ function Home() {
     if (left === null) return t("rx.lifetime");
     return left === 1 ? t("home.lastDay") : t("home.daysLeft", { n: String(left) });
   };
-  const { items, update } = usePrescriptions();
+  const { items, loadError, update } = usePrescriptions();
   const [life, setLife] = useState<Lifestyle | null>(null);
   const [connected, setConnected] = useState(false);
   const [autoOn, setAutoOn] = useState(false);
@@ -68,6 +68,14 @@ function Home() {
             <Link to="/lifestyle" className="font-semibold underline">{t("home.lifestyleHintLink")}</Link>{" "}
             {t("home.lifestyleHintAfter")}
           </div>
+        )}
+        {loadError && (
+          <p
+            role="alert"
+            className="mb-6 rounded-2xl bg-destructive/10 p-4 text-sm font-semibold text-destructive"
+          >
+            {t("api.loadFailed")}
+          </p>
         )}
         {sorted.length === 0 ? (
           <div className="rounded-2xl border border-dashed bg-card p-12 text-center">
